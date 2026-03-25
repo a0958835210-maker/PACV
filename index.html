@@ -6,82 +6,116 @@
     <title>嘉義分部物資借閱</title>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <style>
-        body { font-family: -apple-system, sans-serif; background: #f0f2f5; padding: 15px; margin: 0; }
-        .card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-        .photo { width: 100%; height: 200px; object-fit: cover; border-radius: 8px; background: #eee; }
-        .status-tag { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; margin-top: 10px; }
+        :root { --primary: #007bff; --bg: #f0f2f5; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); padding: 10px; margin: 0; }
+        
+        /* 模式切換按鈕 */
+        .view-switcher { display: flex; gap: 5px; margin-bottom: 15px; background: white; padding: 5px; border-radius: 8px; sticky: top; }
+        .mode-btn { flex: 1; padding: 8px; border: none; background: none; border-radius: 5px; font-size: 13px; cursor: pointer; color: #666; }
+        .mode-btn.active { background: var(--primary); color: white; font-weight: bold; }
+
+        /* 通用卡片樣式 */
+        .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 15px; position: relative; }
+        .photo { width: 100%; object-fit: cover; background: #eee; display: block; }
+        .content { padding: 12px; }
+        .status-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 5px; }
         .available { background: #dcfce7; color: #166534; }
         .borrowed { background: #fee2e2; color: #991b1b; }
-        .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; margin-top: 12px; font-size: 16px; font-weight: bold; cursor: pointer; color: white; }
-        .btn-blue { background: #007bff; }
+
+        /* --- 模式 1: 大圖卡片 (預設) --- */
+        .view-card .photo { height: 220px; }
+        .view-card .name { font-size: 18px; font-weight: bold; }
+
+        /* --- 模式 2: 網格 (Grid) --- */
+        #app.view-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .view-grid .card { margin-bottom: 0; }
+        .view-grid .photo { height: 120px; }
+        .view-grid .name { font-size: 14px; height: 40px; overflow: hidden; }
+        .view-grid .recommend { display: none; } /* 網格模式隱藏推薦文節省空間 */
+
+        /* --- 模式 3: 清單 (List) --- */
+        .view-list .card { display: flex; align-items: center; height: 100px; }
+        .view-list .photo { width: 80px; height: 100px; }
+        .view-list .content { flex: 1; padding: 10px; }
+        .view-list .name { font-size: 15px; font-weight: bold; }
+        .view-list .recommend { display: none; }
+        .view-list .btn { width: auto; padding: 5px 12px; font-size: 12px; margin-top: 5px; }
+
+        .btn { width: 100%; padding: 10px; border: none; border-radius: 6px; margin-top: 10px; font-weight: bold; cursor: pointer; color: white; }
+        .btn-blue { background: var(--primary); }
         .btn-gray { background: #6c757d; }
     </style>
 </head>
 <body>
-    <div id="user-info" style="font-weight: bold; margin-bottom: 10px; color: #333;">系統啟動中...</div>
-    <div id="status-msg" style="color: #666; font-size: 14px;">正在讀取清單...</div>
-    <div id="app"></div>
+    <div id="user-info" style="font-size: 14px; margin: 5px; color: #333;">載入中...</div>
+    
+    <div class="view-switcher">
+        <button class="mode-btn active" onclick="switchView('card', this)">大圖</button>
+        <button class="mode-btn" onclick="switchView('grid', this)">網格</button>
+        <button class="mode-btn" onclick="switchView('list', this)">清單</button>
+    </div>
+
+    <div id="status-msg" style="text-align:center; padding: 20px; color: #999;">正在連線雲端...</div>
+    <div id="app" class="view-card"></div>
 
     <script>
         const GAS_URL = "https://script.google.com/macros/s/AKfycbyxtge8LVGHeu0Uag82TqkypW7GF32rEKvZ4E5-PHyUKUSbEShBxkyxz-DK2XJ3f_Qm/exec"; 
         const LIFF_ID = "2009125879-jcbSh64X";
         let profile = {};
+        let inventoryData = [];
 
         async function init() {
             try {
                 await liff.init({ liffId: LIFF_ID });
-                if (!liff.isLoggedIn()) {
-                    liff.login();
-                    return;
-                }
+                if (!liff.isLoggedIn()) { liff.login(); return; }
                 profile = await liff.getProfile();
-                document.getElementById('user-info').innerText = `你好，${profile.displayName}`;
+                document.getElementById('user-info').innerText = `👋 你好，${profile.displayName}`;
                 fetchData();
-            } catch (err) {
-                document.getElementById('status-msg').innerText = "LIFF 初始化失敗。";
-            }
+            } catch (err) { console.error(err); }
         }
 
         async function fetchData() {
             try {
                 const response = await fetch(`${GAS_URL}?action=getInventory`);
-                const data = await response.json();
-                render(data);
+                inventoryData = await response.json();
+                render();
             } catch (err) {
-                document.getElementById('status-msg').innerText = "無法連線至資料庫，請檢查 GAS 部署權限。";
+                document.getElementById('status-msg').innerText = "讀取失敗，請重新開啟。";
             }
         }
 
-        function render(data) {
+        function switchView(mode, btn) {
+            document.getElementById('app').className = `view-${mode}`;
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        function render() {
             document.getElementById('status-msg').style.display = 'none';
             const app = document.getElementById('app');
-            app.innerHTML = data.map(item => `
+            app.innerHTML = inventoryData.map(item => `
                 <div class="card">
-                    <img src="${item.photo}" class="photo" onerror="this.src='https://via.placeholder.com/300x200?text=無照片'">
-                    <div style="font-size: 18px; font-weight: bold; margin-top: 10px;">${item.name}</div>
-                    <div class="status-tag ${item.status === '可用' ? 'available' : 'borrowed'}">${item.status}</div>
-                    <div style="font-size: 14px; color: #444; margin: 10px 0;">${item.recommend}</div>
-                    <div style="font-size: 12px; color: #888;">配件：${item.checkList}</div>
-                    ${item.status === '可用' ? 
-                        `<button class="btn btn-blue" onclick="doAction('${item.name}', '借出')">立即借用</button>` : 
-                        `<button class="btn btn-gray" onclick="doAction('${item.name}', '歸還')">辦理歸還</button>`
-                    }
+                    <img src="${item.photo}" class="photo" onerror="this.src='https://via.placeholder.com/300?text=無照片或格式錯誤'">
+                    <div class="content">
+                        <div class="status-tag ${item.status === '可用' ? 'available' : 'borrowed'}">${item.status}</div>
+                        <div class="name">${item.name}</div>
+                        <div class="recommend" style="font-size: 12px; color: #666; margin-top:5px;">${item.recommend}</div>
+                        ${item.status === '可用' ? 
+                            `<button class="btn btn-blue" onclick="doAction('${item.name}', '借出')">我要借用</button>` : 
+                            `<button class="btn btn-gray" onclick="doAction('${item.name}', '歸還')">辦理歸還</button>`
+                        }
+                    </div>
                 </div>
             `).join('');
         }
 
         async function doAction(itemName, type) {
-            let email = "-";
-            let date = "-";
-            
+            let email = "-"; let date = "-";
             if (type === '借出') {
-                email = prompt("請輸入您的 Email (通知用)：");
-                if (!email || !email.includes("@")) return alert("格式錯誤");
-                date = prompt("預計歸還日期 (YYYY/MM/DD)：");
-                if (!date) return;
+                email = prompt("請輸入 Email："); if (!email || !email.includes("@")) return;
+                date = prompt("預計歸還日期 (YYYY/MM/DD)："); if (!date) return;
             }
-
-            if (!confirm(`確認要${type} [${itemName}] 嗎？`)) return;
+            if (!confirm(`確認${type} [${itemName}]？`)) return;
 
             document.getElementById('app').style.opacity = "0.3";
             const api = `${GAS_URL}?action=process&type=${type}&itemName=${encodeURIComponent(itemName)}&userName=${encodeURIComponent(profile.displayName)}&userEmail=${encodeURIComponent(email)}&dueDate=${encodeURIComponent(date)}`;
@@ -91,10 +125,7 @@
                 alert(`${type}成功！`);
                 liff.sendMessages([{ type: 'text', text: type === '借出' ? `📖 已借閱 [${itemName}]\n預計歸還：${date}` : `✅ 已歸還 [${itemName}]` }]);
                 location.reload();
-            } catch (err) {
-                alert("連線逾時，請檢查網路。");
-                document.getElementById('app').style.opacity = "1";
-            }
+            } catch (err) { alert("失敗"); location.reload(); }
         }
 
         init();
